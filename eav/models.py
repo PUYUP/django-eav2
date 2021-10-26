@@ -14,35 +14,33 @@ from copy import copy
 from django.contrib.contenttypes import fields as generic
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.db.models.base import ModelBase
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from django.core.serializers.json import DjangoJSONEncoder
-if hasattr(models, "JSONField"):
-    JSONField = models.JSONField
-else:
-   try:
-       from django.contrib.postgres.fields import JSONField
-   except:
-       JSONField = models.TextField
+from eav.logic.entity_pk import get_entity_pk_type
 
+try:
+    from django.db.models import JSONField
+except ImportError:
+    from django_jsonfield_backport.models import JSONField
 
-from .validators import (
-    validate_text,
+from eav import register
+from eav.exceptions import IllegalAssignmentException
+from eav.fields import CSVField, EavDatatypeField, EavSlugField
+from eav.validators import (
+    validate_bool,
+    validate_csv,
+    validate_date,
+    validate_enum,
     validate_float,
     validate_int,
-    validate_date,
-    validate_bool,
-    validate_object,
-    validate_enum,
     validate_json,
-    validate_csv,
+    validate_object,
+    validate_text,
 )
-from .exceptions import IllegalAssignmentException
-from .fields import EavDatatypeField, EavSlugField, CSVField
-from . import register
 
 
 class EnumValue(models.Model):
@@ -71,10 +69,21 @@ class EnumValue(models.Model):
        only have a total of four *EnumValues* objects, as you should have used
        the same *Yes* and *No* *EnumValues* for both *EnumGroups*.
     """
-    value = models.CharField(_('Value'), db_index=True, unique=True, max_length=50)
+
+    value = models.CharField(
+        _('Value'),
+        db_index=True,
+        unique=True,
+        max_length=50,
+    )
 
     def __str__(self):
-        return '<EnumValue {}>'.format(self.value)
+        """String representation of `EnumValue` instance."""
+        return str(self.value)
+
+    def __repr__(self):
+        """String representation of `EnumValue` object."""
+        return '<EnumValue {0}>'.format(self.value)
 
 
 class EnumGroup(models.Model):
@@ -85,11 +94,17 @@ class EnumGroup(models.Model):
 
     See :class:`EnumValue` for an example.
     """
-    name = models.CharField(_('Name'), unique = True, max_length = 100)
-    values = models.ManyToManyField(EnumValue, verbose_name = _('Enum group'))
+
+    name = models.CharField(_('Name'), unique=True, max_length=100)
+    values = models.ManyToManyField(EnumValue, verbose_name=_('Enum group'))
 
     def __str__(self):
-        return '<EnumGroup {}>'.format(self.name)
+        """String representation of `EnumGroup` instance."""
+        return str(self.name)
+
+    def __repr__(self):
+        """String representation of `EnumGroup` object."""
+        return '<EnumGroup {0}>'.format(self.name)
 
 
 class Attribute(models.Model):
@@ -143,43 +158,42 @@ class Attribute(models.Model):
     .. warning:: Once an Attribute has been used by an entity, you can not
                  change it's datatype.
     """
+
     class Meta:
         ordering = ['name']
 
-    TYPE_TEXT    = 'text'
-    TYPE_FLOAT   = 'float'
-    TYPE_INT     = 'int'
-    TYPE_DATE    = 'date'
+    TYPE_TEXT = 'text'
+    TYPE_FLOAT = 'float'
+    TYPE_INT = 'int'
+    TYPE_DATE = 'date'
     TYPE_BOOLEAN = 'bool'
-    TYPE_OBJECT  = 'object'
-    TYPE_ENUM    = 'enum'
-    TYPE_JSON    = 'json'
-    TYPE_CSV     = 'csv'
+    TYPE_OBJECT = 'object'
+    TYPE_ENUM = 'enum'
+    TYPE_JSON = 'json'
+    TYPE_CSV = 'csv'
 
     DATATYPE_CHOICES = (
-        (TYPE_TEXT,    _('Text')),
-        (TYPE_DATE,    _('Date')),
-        (TYPE_FLOAT,   _('Float')),
-        (TYPE_INT,     _('Integer')),
+        (TYPE_TEXT, _('Text')),
+        (TYPE_DATE, _('Date')),
+        (TYPE_FLOAT, _('Float')),
+        (TYPE_INT, _('Integer')),
         (TYPE_BOOLEAN, _('True / False')),
-        (TYPE_OBJECT,  _('Django Object')),
-        (TYPE_ENUM,    _('Multiple Choice')),
-        (TYPE_JSON,    _('JSON Object')),
-        (TYPE_CSV,     _('Comma-Separated-Value')),
+        (TYPE_OBJECT, _('Django Object')),
+        (TYPE_ENUM, _('Multiple Choice')),
+        (TYPE_JSON, _('JSON Object')),
+        (TYPE_CSV, _('Comma-Separated-Value')),
     )
 
     # Core attributes
 
     datatype = EavDatatypeField(
-        verbose_name = _('Data Type'),
-        choices      = DATATYPE_CHOICES,
-        max_length   = 6
+        verbose_name=_('Data Type'), choices=DATATYPE_CHOICES, max_length=6
     )
 
     name = models.CharField(
-        verbose_name = _('Name'),
-        max_length   = 100,
-        help_text    = _('User-friendly attribute name')
+        verbose_name=_('Name'),
+        max_length=100,
+        help_text=_('User-friendly attribute name'),
     )
 
     """
@@ -188,11 +202,11 @@ class Attribute(models.Model):
     (see :meth:`~eav.fields.EavSlugField.create_slug_from_name`).
     """
     slug = EavSlugField(
-        verbose_name = _('Slug'),
-        max_length   = 50,
-        db_index     = True,
-        unique       = True,
-        help_text    = _('Short unique attribute label')
+        verbose_name=_('Slug'),
+        max_length=50,
+        db_index=True,
+        unique=True,
+        help_text=_('Short unique attribute label'),
     )
 
     """
@@ -201,7 +215,7 @@ class Attribute(models.Model):
         means that *all* entities that *can* have this attribute will
         be required to have a value for it.
     """
-    required = models.BooleanField(verbose_name = _('Required'), default = False)
+    required = models.BooleanField(verbose_name=_('Required'), default=False)
 
     entity_ct = models.ManyToManyField(ContentType, blank=True)
     """
@@ -213,36 +227,30 @@ class Attribute(models.Model):
 
     enum_group = models.ForeignKey(
         EnumGroup,
-        verbose_name = _('Choice Group'),
-        on_delete    = models.PROTECT,
-        blank        = True,
-        null         = True
+        verbose_name=_('Choice Group'),
+        on_delete=models.PROTECT,
+        blank=True,
+        null=True,
     )
 
     description = models.CharField(
-        verbose_name = _('Description'),
-        max_length   = 256,
-        blank        = True,
-        null         = True,
-        help_text    = _('Short description')
+        verbose_name=_('Description'),
+        max_length=256,
+        blank=True,
+        null=True,
+        help_text=_('Short description'),
     )
 
     # Useful meta-information
 
     display_order = models.PositiveIntegerField(
-        verbose_name = _('Display order'),
-        default = 1
+        verbose_name=_('Display order'), default=1
     )
 
-    modified = models.DateTimeField(
-       verbose_name = _('Modified'),
-       auto_now     = True
-    )
+    modified = models.DateTimeField(verbose_name=_('Modified'), auto_now=True)
 
     created = models.DateTimeField(
-       verbose_name = _('Created'),
-       default      = timezone.now,
-       editable     = False
+        verbose_name=_('Created'), default=timezone.now, editable=False
     )
 
     @property
@@ -260,15 +268,15 @@ class Attribute(models.Model):
            validators to return as well as the default, built-in one.
         """
         DATATYPE_VALIDATORS = {
-            'text':   validate_text,
-            'float':  validate_float,
-            'int':    validate_int,
-            'date':   validate_date,
-            'bool':   validate_bool,
+            'text': validate_text,
+            'float': validate_float,
+            'int': validate_int,
+            'date': validate_date,
+            'bool': validate_bool,
             'object': validate_object,
-            'enum':   validate_enum,
-            'json':   validate_json,
-            'csv':    validate_csv,
+            'enum': validate_enum,
+            'json': validate_json,
+            'csv': validate_csv,
         }
 
         return [DATATYPE_VALIDATORS[self.datatype]]
@@ -287,7 +295,7 @@ class Attribute(models.Model):
             if not self.enum_group.values.filter(value=value).exists():
                 raise ValidationError(
                     _('%(val)s is not a valid choice for %(attr)s')
-                    % dict(val = value, attr = self)
+                    % dict(val=value, attr=self)
                 )
 
     def save(self, *args, **kwargs):
@@ -322,7 +330,11 @@ class Attribute(models.Model):
         Returns a query set of :class:`EnumValue` objects for this attribute.
         Returns None if the datatype of this attribute is not *TYPE_ENUM*.
         """
-        return self.enum_group.values.all() if self.datatype == Attribute.TYPE_ENUM else None
+        return (
+            self.enum_group.values.all()
+            if self.datatype == Attribute.TYPE_ENUM
+            else None
+        )
 
     def save_value(self, entity, value):
         """
@@ -339,21 +351,19 @@ class Attribute(models.Model):
         """
         ct = ContentType.objects.get_for_model(entity)
 
+        entity_filter = {
+            'entity_ct': ct,
+            'attribute': self,
+            '{0}'.format(get_entity_pk_type(entity)): entity.pk,
+        }
+
         try:
-            value_obj = self.value_set.get(
-                entity_ct = ct,
-                entity_id = entity.pk,
-                attribute = self
-            )
+            value_obj = self.value_set.get(**entity_filter)
         except Value.DoesNotExist:
             if value == None or value == '':
                 return
 
-            value_obj = Value.objects.create(
-                entity_ct = ct,
-                entity_id = entity.pk,
-                attribute = self
-            )
+            value_obj = Value.objects.create(**entity_filter)
 
         if value == None or value == '':
             value_obj.delete()
@@ -367,10 +377,11 @@ class Attribute(models.Model):
         return '{} ({})'.format(self.name, self.get_datatype_display())
 
 
-class Value(models.Model):
-    """
-    Putting the **V** in *EAV*. This model stores the value for one particular
-    :class:`Attribute` for some entity.
+class Value(models.Model):  # noqa: WPS110
+    """Putting the **V** in *EAV*.
+
+    This model stores the value for one particular :class:`Attribute` for
+    some entity.
 
     As with most EAV implementations, most of the columns of this model will
     be blank, as onle one *value_* field will be used.
@@ -389,82 +400,119 @@ class Value(models.Model):
         # = <Value: crazy_dev_user - Fav Drink: "red bull">
     """
 
+    # Direct foreign keys
+    attribute = models.ForeignKey(
+        Attribute,
+        db_index=True,
+        on_delete=models.PROTECT,
+        verbose_name=_('Attribute'),
+    )
+
+    # Entity generic relationships. Rather than rely on database casting,
+    # this will instead use a separate ForeignKey field attribute that matches
+    # the FK type of the entity.
+    entity_id = models.IntegerField(blank=True, null=True)
+    entity_uuid = models.UUIDField(blank=True, null=True)
+
     entity_ct = models.ForeignKey(
         ContentType,
-        on_delete    = models.PROTECT,
-        related_name = 'value_entities'
+        on_delete=models.PROTECT,
+        related_name='value_entities',
     )
 
-    entity_id = models.IntegerField()
-    entity = generic.GenericForeignKey(ct_field = 'entity_ct', fk_field = 'entity_id')
+    entity_pk_int = generic.GenericForeignKey(
+        ct_field='entity_ct',
+        fk_field='entity_id',
+    )
 
-    value_text  = models.TextField(blank = True, null = True)
-    value_float = models.FloatField(blank = True, null = True)
-    value_int   = models.IntegerField(blank = True, null = True)
-    value_date  = models.DateTimeField(blank = True, null = True)
-    value_bool  = models.BooleanField(blank = True, null = True)
-    value_json  = JSONField(default=dict, encoder=DjangoJSONEncoder, blank = True, null = True)
-    value_csv   = CSVField(blank = True, null = True)
+    entity_pk_uuid = generic.GenericForeignKey(
+        ct_field='entity_ct',
+        fk_field='entity_uuid',
+    )
 
-    value_enum  = models.ForeignKey(
+    # Model attributes
+    created = models.DateTimeField(
+        _('Created'),
+        default=timezone.now,
+    )
+
+    modified = models.DateTimeField(_('Modified'), auto_now=True)
+
+    # Value attributes
+    value_bool = models.BooleanField(blank=True, null=True)
+    value_csv = CSVField(blank=True, null=True)
+    value_date = models.DateTimeField(blank=True, null=True)
+    value_float = models.FloatField(blank=True, null=True)
+    value_int = models.IntegerField(blank=True, null=True)
+    value_text = models.TextField(blank=True, null=True)
+
+    value_json = JSONField(
+        default=dict,
+        encoder=DjangoJSONEncoder,
+        blank=True,
+        null=True,
+    )
+
+    value_enum = models.ForeignKey(
         EnumValue,
-        blank        = True,
-        null         = True,
-        on_delete    = models.PROTECT,
-        related_name = 'eav_values'
+        blank=True,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name='eav_values',
     )
 
+    # Value object relationship
     generic_value_id = models.IntegerField(blank=True, null=True)
 
     generic_value_ct = models.ForeignKey(
         ContentType,
-        blank        = True,
-        null         = True,
-        on_delete    = models.PROTECT,
-        related_name ='value_values'
+        blank=True,
+        null=True,
+        on_delete=models.PROTECT,
+        related_name='value_values',
     )
 
     value_object = generic.GenericForeignKey(
-        ct_field = 'generic_value_ct',
-        fk_field = 'generic_value_id'
+        ct_field='generic_value_ct',
+        fk_field='generic_value_id',
     )
-
-    created = models.DateTimeField(_('Created'), default = timezone.now)
-    modified = models.DateTimeField(_('Modified'), auto_now = True)
-
-    attribute = models.ForeignKey(
-        Attribute,
-        db_index     = True,
-        on_delete    = models.PROTECT,
-        verbose_name = _('Attribute')
-    )
-
-    def save(self, *args, **kwargs):
-        """
-        Validate and save this value.
-        """
-        self.full_clean()
-        super(Value, self).save(*args, **kwargs)
-
-    def _get_value(self):
-        """
-        Return the python object this value is holding
-        """
-        return getattr(self, 'value_%s' % self.attribute.datatype)
-
-    def _set_value(self, new_value):
-        """
-        Set the object this value is holding
-        """
-        setattr(self, 'value_%s' % self.attribute.datatype, new_value)
-
-    value = property(_get_value, _set_value)
 
     def __str__(self):
-        return '{}: "{}" ({})'.format(self.attribute.name, self.value, self.entity)
+        """String representation of a Value."""
+        entity = self.entity_pk_int
+        if self.entity_uuid:
+            entity = self.entity_pk_uuid
+        return '{0}: "{1}" ({2})'.format(
+            self.attribute.name,
+            self.value,
+            entity,
+        )
 
     def __repr__(self):
-        return '{}: "{}" ({})'.format(self.attribute.name, self.value, self.entity.pk)
+        """Representation of Value object."""
+        entity = self.entity_pk_int
+        if self.entity_uuid:
+            entity = self.entity_pk_uuid
+        return '{0}: "{1}" ({2})'.format(
+            self.attribute.name,
+            self.value,
+            entity.pk,
+        )
+
+    def save(self, *args, **kwargs):
+        """Validate and save this value."""
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def _get_value(self):
+        """Return the python object this value is holding."""
+        return getattr(self, 'value_{0}'.format(self.attribute.datatype))
+
+    def _set_value(self, new_value):
+        """Set the object this value is holding."""
+        setattr(self, 'value_{0}'.format(self.attribute.datatype), new_value)
+
+    value = property(_get_value, _set_value)  # noqa: WPS110
 
 
 class Entity(object):
@@ -472,6 +520,7 @@ class Entity(object):
     The helper class that will be attached to any entity
     registered with eav.
     """
+
     @staticmethod
     def pre_save_handler(sender, *args, **kwargs):
         """
@@ -519,7 +568,7 @@ class Entity(object):
             except Attribute.DoesNotExist:
                 raise AttributeError(
                     _('%(obj)s has no EAV attribute named %(attr)s')
-                    % dict(obj = self.instance, attr = name)
+                    % dict(obj=self.instance, attr=name)
                 )
 
             try:
@@ -561,7 +610,9 @@ class Entity(object):
         for attribute in self.get_all_attributes():
             if self._hasattr(attribute.slug):
                 attribute_value = self._getattr(attribute.slug)
-                if attribute.datatype == Attribute.TYPE_ENUM and not isinstance(attribute_value, EnumValue):
+                if attribute.datatype == Attribute.TYPE_ENUM and not isinstance(
+                    attribute_value, EnumValue
+                ):
                     if attribute_value is not None:
                         attribute_value = EnumValue.objects.get(value=attribute_value)
                 attribute.save_value(self.instance, attribute_value)
@@ -596,29 +647,31 @@ class Entity(object):
                 except ValidationError as e:
                     raise ValidationError(
                         _('%(attr)s EAV field %(err)s')
-                        % dict(attr = attribute.slug, err = e)
+                        % dict(attr=attribute.slug, err=e)
                     )
 
         illegal = values_dict or (
-            self.get_object_attributes() - self.get_all_attribute_slugs())
+            self.get_object_attributes() - self.get_all_attribute_slugs()
+        )
 
         if illegal:
             raise IllegalAssignmentException(
-                'Instance of the class {} cannot have values for attributes: {}.'
-                .format(self.instance.__class__, ', '.join(illegal))
+                'Instance of the class {} cannot have values for attributes: {}.'.format(
+                    self.instance.__class__, ', '.join(illegal)
+                )
             )
 
     def get_values_dict(self):
         return {v.attribute.slug: v.value for v in self.get_values()}
 
     def get_values(self):
-        """
-        Get all set :class:`Value` objects for self.instance
-        """
-        return Value.objects.filter(
-            entity_ct = self.ct,
-            entity_id = self.instance.pk
-        ).select_related()
+        """Get all set :class:`Value` objects for self.instance."""
+        entity_filter = {
+            'entity_ct': self.ct,
+            '{0}'.format(get_entity_pk_type(self.instance)): self.instance.pk,
+        }
+
+        return Value.objects.filter(**entity_filter).select_related()
 
     def get_all_attribute_slugs(self):
         """

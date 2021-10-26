@@ -4,9 +4,16 @@ from copy import deepcopy
 
 from django import forms
 from django.contrib.admin.widgets import AdminSplitDateTime
-from django.forms import (BooleanField, CharField, ChoiceField, DateTimeField,
-                          FloatField, IntegerField, ModelForm)
 from django.core.exceptions import ValidationError
+from django.forms import (
+    BooleanField,
+    CharField,
+    ChoiceField,
+    DateTimeField,
+    FloatField,
+    IntegerField,
+    ModelForm,
+)
 from django.utils.translation import gettext_lazy as _
 
 try:
@@ -14,7 +21,7 @@ try:
 except:
     JSONField = CharField
 
-from .widgets import CSVWidget
+from eav.widgets import CSVWidget
 
 
 class CSVFormField(forms.Field):
@@ -22,6 +29,10 @@ class CSVFormField(forms.Field):
     code = 'invalid'
     widget = CSVWidget
     default_separator = ";"
+
+    def __init__(self, *args, **kwargs):
+        kwargs.pop('max_length', None)
+        super().__init__(*args, **kwargs)
 
     def to_python(self, value):
         if not value:
@@ -60,15 +71,16 @@ class BaseDynamicEntityForm(ModelForm):
     csv    CSVField
     =====  =============
     """
+
     FIELD_CLASSES = {
-        'text':  CharField,
+        'text': CharField,
         'float': FloatField,
-        'int':   IntegerField,
-        'date':  DateTimeField,
-        'bool':  BooleanField,
-        'enum':  ChoiceField,
-        'json':  JSONField,
-        'csv':   CSVFormField,
+        'int': IntegerField,
+        'date': DateTimeField,
+        'bool': BooleanField,
+        'enum': ChoiceField,
+        'json': JSONField,
+        'csv': CSVFormField,
     }
 
     def __init__(self, data=None, *args, **kwargs):
@@ -119,10 +131,12 @@ class BaseDynamicEntityForm(ModelForm):
         ``self.instance`` and related EAV attributes. Returns ``instance``.
         """
         if self.errors:
-            raise ValueError(_(
-                'The %s could not be saved because the data'
-                'didn\'t validate.' % self.instance._meta.object_name
-            ))
+            raise ValueError(
+                _(
+                    'The %s could not be saved because the data'
+                    'didn\'t validate.' % self.instance._meta.object_name
+                )
+            )
 
         # Create entity instance, don't save yet.
         instance = super(BaseDynamicEntityForm, self).save(commit=False)

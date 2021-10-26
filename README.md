@@ -1,6 +1,7 @@
-[![Build Status](https://travis-ci.org/lvm/django-eav2.svg?branch=master)](https://travis-ci.org/lvm/django-eav2)
-![Python Version](https://img.shields.io/badge/Python-3.6,%203.7,%203.8,%203.9-blue.svg)
-![Django Version](https://img.shields.io/badge/Django-2.2,%20,3.1,%203.2-green.svg)
+[![Build Status](https://github.com/jazzband/django-eav2/actions/workflows/test.yml/badge.svg)](https://github.com/jazzband/django-eav2/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/jazzband/django-eav2/branch/master/graph/badge.svg?token=BJk3zS22BS)](https://codecov.io/gh/jazzband/django-eav2)
+[![Python Version](https://img.shields.io/pypi/pyversions/django-eav2.svg)](https://pypi.org/project/django-eav2/)
+[![Django Version](https://img.shields.io/pypi/djversions/django-eav2.svg?color=green)](https://pypi.org/project/django-eav2/)
 [![Jazzband](https://jazzband.co/static/img/badge.svg)](https://jazzband.co/)
 
 ## Django EAV 2 - Entity-Attribute-Value storage for Django
@@ -84,23 +85,35 @@ In some use-cases, JSONB (binary JSON data) datatype (Postgres 9.4+ and analogou
 
 ## Installation
 
-You can install **django-eav2** from three sources:
+Install with pip
 
 ```bash
-# From PyPI via pip
 pip install django-eav2
+```
 
-# From source via pip
-pip install git+https://github.com/lvm/django-eav2@master
+## Configuration
 
-# From source via setuptools
-git clone git@github.com:lvm/django-eav2.git
-cd django-eav2
-python setup.py install
+Add `eav2` to `INSTALLED_APPS` in your settings.
 
-# To uninstall:
-python setup.py install --record files.txt
-rm $(cat files.txt)
+```python
+INSTALLED_APPS = [
+    ...
+    'eav',
+]
+```
+
+### Note: Django 2.2 Users
+
+Since `models.JSONField()` isn't supported in Django 2.2, we use [django-jsonfield-backport](https://github.com/laymonage/django-jsonfield-backport) to provide [JSONField](https://docs.djangoproject.com/en/dev/releases/3.1/#jsonfield-for-all-supported-database-backends) functionality.
+
+This requires adding `django_jsonfield_backport` to your `INSTALLED_APPS` as well.
+
+```python
+INSTALLED_APPS = [
+    ...
+    'eav',
+    'django_jsonfield_backport',
+]
 ```
 
 ## Getting started
