@@ -127,12 +127,7 @@ class Registry(object):
         Detach the manager and restore the previous one (if there was one).
         """
         mgr = getattr(self.model_cls, self.config_cls.manager_attr)
-
-        # Default `local_managers` empty
-        # Check it make sure exists before remove
-        if mgr in self.model_cls._meta.local_managers:
-            self.model_cls._meta.local_managers.remove(mgr)
-
+        self.model_cls._meta.local_managers.remove(mgr)
         self.model_cls._meta._expire_cache()
         delattr(self.model_cls, self.config_cls.manager_attr)
 
